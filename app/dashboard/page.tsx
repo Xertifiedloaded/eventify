@@ -152,6 +152,7 @@ export default function DashboardPage() {
               <span className="hidden sm:block text-sm text-muted-foreground">
                 Welcome, {user.name}
               </span>
+
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

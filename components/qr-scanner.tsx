@@ -109,7 +109,7 @@ export default function QRScanner({ onScan }: QRScannerProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-5xl mx-auto">
       {error && (
         <Alert>
           <AlertDescription>{error}</AlertDescription>
