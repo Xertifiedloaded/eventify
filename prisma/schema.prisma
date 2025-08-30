@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  email     String   @unique
+  password  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  events Event[]
+  
+  @@map("users")
+}
+
+model Event {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  description String
+  date        DateTime
+  time        String
+  location    String
+  status      EventStatus @default(ACTIVE)
+  slug        String   @unique
+  maxAttendees Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  organizerId String @db.ObjectId
+  organizer   User   @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  registrations Registration[]
+  
+  @@map("events")
+}
+
+model Registration {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  email     String
+  phone     String?
+  location  String
+  qrCode    String   @unique
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  
+  // Relations
+  eventId String @db.ObjectId
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  @@unique([eventId, email])
+  @@map("registrations")
+}
+
+enum EventStatus {
+  ACTIVE
+  ENDED
+  CANCELLED
+}
