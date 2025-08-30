@@ -1,13 +1,14 @@
 "use client"
 
 import type React from "react"
+import jsQR from "jsqr"
 
 import { useEffect, useRef, useState } from "react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Camera, Type } from "lucide-react"
+import { Camera, Type, CheckCircle } from "lucide-react"
 
 interface QRScannerProps {
   onScan: (data: string) => void
@@ -16,38 +17,53 @@ interface QRScannerProps {
 export default function QRScanner({ onScan }: QRScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const scanIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  
   const [isScanning, setIsScanning] = useState(false)
   const [error, setError] = useState("")
   const [manualInput, setManualInput] = useState("")
   const [showManualInput, setShowManualInput] = useState(false)
   const [stream, setStream] = useState<MediaStream | null>(null)
+  const [scanStatus, setScanStatus] = useState("Initializing camera...")
 
   useEffect(() => {
-    startCamera()
+    if (!showManualInput) {
+      startCamera()
+    }
     return () => {
       stopCamera()
     }
-  }, [])
+  }, [showManualInput])
 
   const startCamera = async () => {
     try {
       setError("")
+      setScanStatus("Requesting camera access...")
+      
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" }, // Use back camera if available
+        video: { 
+          facingMode: "environment", // Use back camera on mobile
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }, 
       })
 
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream
         setStream(mediaStream)
         setIsScanning(true)
+        setScanStatus("Camera ready - Point at QR code")
 
         // Start scanning when video is ready
         videoRef.current.onloadedmetadata = () => {
-          scanQRCode()
+          videoRef.current?.play()
+          startScanning()
         }
       }
     } catch (err) {
+      console.error("Camera error:", err)
       setError("Camera access denied or not available. Please use manual input instead.")
+      setScanStatus("Camera unavailable")
       setShowManualInput(true)
     }
   }
@@ -57,7 +73,21 @@ export default function QRScanner({ onScan }: QRScannerProps) {
       stream.getTracks().forEach((track) => track.stop())
       setStream(null)
     }
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current)
+      scanIntervalRef.current = null
+    }
     setIsScanning(false)
+  }
+
+  const startScanning = () => {
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current)
+    }
+
+    scanIntervalRef.current = setInterval(() => {
+      scanQRCode()
+    }, 100) // Scan every 100ms
   }
 
   const scanQRCode = () => {
@@ -68,8 +98,6 @@ export default function QRScanner({ onScan }: QRScannerProps) {
     const context = canvas.getContext("2d")
 
     if (!context || video.videoWidth === 0 || video.videoHeight === 0) {
-      // Video not ready yet, try again
-      setTimeout(scanQRCode, 100)
       return
     }
 
@@ -83,20 +111,25 @@ export default function QRScanner({ onScan }: QRScannerProps) {
     try {
       // Get image data for QR code detection
       const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
+      
+      // Use jsQR to detect QR codes
+      const qrCode = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: "dontInvert", // Performance optimization
+      })
 
-      // Simple QR code detection simulation
-      // In a real implementation, you would use a QR code library like jsQR
-      // For now, we'll simulate detection by checking for manual input
-
-      // Continue scanning
-      if (isScanning) {
-        setTimeout(scanQRCode, 100)
+      if (qrCode) {
+        setScanStatus("QR Code detected!")
+        console.log("QR Code found:", qrCode.data)
+        
+        // Stop scanning and call the onScan callback
+        stopCamera()
+        onScan(qrCode.data)
+      } else {
+        setScanStatus("Scanning... Point camera at QR code")
       }
     } catch (err) {
       console.error("QR scanning error:", err)
-      if (isScanning) {
-        setTimeout(scanQRCode, 100)
-      }
+      setScanStatus("Scanning error - trying again...")
     }
   }
 
@@ -108,10 +141,22 @@ export default function QRScanner({ onScan }: QRScannerProps) {
     }
   }
 
+  const toggleInputMethod = () => {
+    if (showManualInput) {
+      // Switching to camera
+      setShowManualInput(false)
+      startCamera()
+    } else {
+      // Switching to manual
+      stopCamera()
+      setShowManualInput(true)
+    }
+  }
+
   return (
-    <div className="space-y-4 max-w-5xl mx-auto">
+    <div className="space-y-4 max-w-lg mx-auto">
       {error && (
-        <Alert>
+        <Alert className="border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
@@ -119,36 +164,53 @@ export default function QRScanner({ onScan }: QRScannerProps) {
       {/* Camera View */}
       {!showManualInput && (
         <div className="relative">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full max-w-md mx-auto rounded-lg border border-border"
-            style={{ aspectRatio: "4/3" }}
-          />
-          <canvas ref={canvasRef} className="hidden" />
-
-          {isScanning && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-48 h-48 border-2 border-primary rounded-lg animate-pulse"></div>
-            </div>
-          )}
+          <div className="relative overflow-hidden rounded-lg border border-border bg-muted">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-auto"
+              style={{ aspectRatio: "4/3" }}
+            />
+            
+            {/* QR Code Scanning Overlay */}
+            {isScanning && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="relative">
+                  <div className="w-48 h-48 border-2 border-primary rounded-lg animate-pulse"></div>
+                  {/* Corner brackets for better UX */}
+                  <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-primary rounded-tl-lg"></div>
+                  <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-primary rounded-tr-lg"></div>
+                  <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-primary rounded-bl-lg"></div>
+                  <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-primary rounded-br-lg"></div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Status indicator */}
+          <div className="mt-2 text-center">
+            <p className="text-sm text-muted-foreground">{scanStatus}</p>
+          </div>
         </div>
       )}
+
+      {/* Hidden canvas for image processing */}
+      <canvas ref={canvasRef} className="hidden" />
 
       {/* Manual Input Toggle */}
       <div className="flex justify-center">
         <Button
           type="button"
           variant="outline"
-          onClick={() => setShowManualInput(!showManualInput)}
-          className="bg-transparent"
+          onClick={toggleInputMethod}
+          className="bg-background"
         >
           {showManualInput ? (
             <>
               <Camera className="h-4 w-4 mr-2" />
-              Use Camera
+              Use Camera Scanner
             </>
           ) : (
             <>
@@ -159,7 +221,7 @@ export default function QRScanner({ onScan }: QRScannerProps) {
         </Button>
       </div>
 
-      {/* Manual Input */}
+      {/* Manual Input Form */}
       {showManualInput && (
         <form onSubmit={handleManualSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -170,18 +232,23 @@ export default function QRScanner({ onScan }: QRScannerProps) {
               placeholder="Paste or type QR code data here"
               value={manualInput}
               onChange={(e) => setManualInput(e.target.value)}
+              className="font-mono text-sm"
             />
           </div>
-          <Button type="submit" disabled={!manualInput.trim()}>
+          <Button type="submit" disabled={!manualInput.trim()} className="w-full">
+            <CheckCircle className="h-4 w-4 mr-2" />
             Verify Registration
           </Button>
         </form>
       )}
 
+      {/* Help Text */}
       <div className="text-center text-sm text-muted-foreground">
-        {isScanning
-          ? "Point your camera at a QR code to scan"
-          : "Camera scanning is not available. Use manual input to verify registrations."}
+        {showManualInput
+          ? "Paste the QR code data or registration code to verify"
+          : isScanning
+          ? "Hold steady and point your camera at the QR code"
+          : "Initializing camera..."}
       </div>
     </div>
   )
