@@ -42,7 +42,7 @@ export default function QRScanner({ onScan }: QRScannerProps) {
       
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { 
-          facingMode: "environment", // Use back camera on mobile
+          facingMode: "environment", 
           width: { ideal: 1280 },
           height: { ideal: 720 }
         }, 
@@ -54,7 +54,6 @@ export default function QRScanner({ onScan }: QRScannerProps) {
         setIsScanning(true)
         setScanStatus("Camera ready - Point at QR code")
 
-        // Start scanning when video is ready
         videoRef.current.onloadedmetadata = () => {
           videoRef.current?.play()
           startScanning()
