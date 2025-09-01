@@ -125,32 +125,153 @@ export default function EventRegistrationsPage({ params }: { params: Promise<{ i
     }
   }
 
-  const handleQRScan = async (qrData: string) => {
-    try {
-      const response = await fetch("/api/verify-registration", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({ qrData, eventId: id }),
-      })
+// Enhanced handleQRScan function for your EventRegistrationsPage component
 
-      const data = await response.json()
+const handleQRScan = async (qrData: string) => {
+  try {
+    console.log("QR Data received:", qrData) // Debug log
+    
+    // Show processing state immediately
+    setVerificationMessage("🔄 Processing QR code...")
+    
+    const response = await fetch("/api/verify-registration", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({ qrData: qrData.trim(), eventId: id }),
+    })
 
-      if (response.ok) {
-        setVerificationMessage(`✅ ${data.registration.name} verified successfully!`)
-        fetchRegistrations() // Refresh the list
-      } else {
-        setVerificationMessage(`❌ ${data.error}`)
+    const data = await response.json()
+    console.log("Verification response:", data) // Debug log
+
+    if (response.ok) {
+      // Success - show detailed message
+      const wasAlreadyVerified = data.message?.includes("already")
+      const icon = wasAlreadyVerified ? "ℹ️" : "✅"
+      const status = wasAlreadyVerified ? "already checked in" : "verified successfully"
+      
+      setVerificationMessage(`${icon} ${data.registration.name} ${status}!`)
+      
+      // Play success sound if available
+      try {
+        const audio = new Audio("/sounds/success.mp3") // Optional: add success sound
+        audio.play().catch(() => {}) // Ignore if sound fails
+      } catch {}
+      
+      // Refresh the list to show updated status
+      fetchRegistrations()
+    } else {
+      // Error - show specific error message
+      setVerificationMessage(`❌ ${data.error || "Verification failed"}`)
+      
+      // Additional debug info in development
+      if (process.env.NODE_ENV === 'development' && data.debug) {
+        console.error("Verification debug info:", data.debug)
+        setVerificationMessage(prev => `${prev}\nDebug: ${data.debug}`)
       }
-    } catch (error) {
-      setVerificationMessage("❌ Verification failed. Please try again.")
     }
-
-    // Clear message after 3 seconds
-    setTimeout(() => setVerificationMessage(""), 3000)
+  } catch (error) {
+    console.error("QR scan error:", error)
+    setVerificationMessage("❌ Network error. Please check your connection and try again.")
   }
+
+  // Clear message after 5 seconds (increased from 3 for better UX)
+  setTimeout(() => setVerificationMessage(""), 5000)
+}
+
+// Optional: Add this helper function to validate QR data before sending
+const validateQRData = (qrData: string): { isValid: boolean; extractedId?: string; format?: string } => {
+  try {
+    // Try JSON format
+    const parsed = JSON.parse(qrData)
+    if (parsed.id || parsed.registrationId) {
+      return { 
+        isValid: true, 
+        extractedId: parsed.id || parsed.registrationId,
+        format: "json"
+      }
+    }
+  } catch {}
+
+  // Try URL format
+  if (qrData.includes("/verify/")) {
+    const parts = qrData.split("/")
+    const id = parts[parts.length - 1]
+    if (id && id.length > 10) {
+      return { isValid: true, extractedId: id, format: "url" }
+    }
+  }
+
+  // Try direct UUID format
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (uuidPattern.test(qrData.trim())) {
+    return { isValid: true, extractedId: qrData.trim(), format: "uuid" }
+  }
+
+  // Try colon-separated format (eventId:registrationId)
+  if (qrData.includes(":")) {
+    const parts = qrData.split(":")
+    const id = parts[parts.length - 1]
+    if (id && id.length > 10) {
+      return { isValid: true, extractedId: id, format: "colon-separated" }
+    }
+  }
+
+  return { isValid: false }
+}
+
+// Enhanced version with pre-validation
+const handleQRScanWithValidation = async (qrData: string) => {
+  try {
+    console.log("QR Data received:", qrData)
+    
+    // Validate QR data format first
+    const validation = validateQRData(qrData)
+    
+    if (!validation.isValid) {
+      setVerificationMessage("❌ Invalid QR code format. Please try scanning again.")
+      console.warn("Invalid QR format:", qrData)
+      return
+    }
+    
+    console.log(`Valid QR detected (${validation.format}):`, validation.extractedId)
+    setVerificationMessage("🔄 Verifying registration...")
+    
+    const response = await fetch("/api/verify-registration", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({ qrData: qrData.trim(), eventId: id }),
+    })
+
+    const data = await response.json()
+
+    if (response.ok) {
+      const wasAlreadyVerified = data.message?.includes("already")
+      const icon = wasAlreadyVerified ? "ℹ️" : "✅"
+      const status = wasAlreadyVerified ? "already checked in" : "verified successfully"
+      
+      setVerificationMessage(`${icon} ${data.registration.name} ${status}!`)
+      fetchRegistrations()
+      
+      // Vibrate on mobile if supported
+      if (navigator.vibrate) {
+        navigator.vibrate(wasAlreadyVerified ? [100] : [100, 50, 100])
+      }
+    } else {
+      setVerificationMessage(`❌ ${data.error || "Verification failed"}`)
+    }
+  } catch (error) {
+    console.error("QR scan error:", error)
+    setVerificationMessage("❌ Network error. Please try again.")
+  }
+
+  setTimeout(() => setVerificationMessage(""), 5000)
+}
 
   const toggleVerification = async (registrationId: string, currentStatus: boolean) => {
     try {

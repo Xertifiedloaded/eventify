@@ -1,52 +1,50 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
+import { jwtVerify } from "jose"
 
-export function middleware(request: NextRequest) {
-  // Protect dashboard and API routes that require authentication
+const secret = new TextEncoder().encode(process.env.JWT_SECRET!)
+
+export async function middleware(request: NextRequest) {
   if (
     request.nextUrl.pathname.startsWith("/dashboard") ||
     request.nextUrl.pathname.startsWith("/api/events") ||
     request.nextUrl.pathname.startsWith("/api/registrations")
   ) {
-    const token = request.cookies.get("token")?.value || request.headers.get("authorization")?.replace("Bearer ", "")
+    const token =
+      request.cookies.get("token")?.value ||
+      request.headers.get("authorization")?.replace("Bearer ", "")
 
     if (!token) {
-      if (request.nextUrl.pathname.startsWith("/api/")) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-      }
-      return NextResponse.redirect(new URL("/auth/login", request.url))
+      return handleUnauthorized(request)
     }
 
     try {
-      // Try to decode the JWT token to get user ID
-      const payload = JSON.parse(atob(token.split(".")[1]))
-      const userId = payload.userId
+      const { payload } = await jwtVerify(token, secret)
+      const userId = payload.userId as string
 
       if (!userId) {
-        if (request.nextUrl.pathname.startsWith("/api/")) {
-          return NextResponse.json({ error: "Invalid token" }, { status: 401 })
-        }
-        return NextResponse.redirect(new URL("/auth/login", request.url))
+        return handleUnauthorized(request)
       }
 
-      // Set user ID header for API routes
       const requestHeaders = new Headers(request.headers)
       requestHeaders.set("x-user-id", userId)
 
       return NextResponse.next({
-        request: {
-          headers: requestHeaders,
-        },
+        request: { headers: requestHeaders },
       })
-    } catch (error) {
-      // If token decoding fails, redirect to login
-      if (request.nextUrl.pathname.startsWith("/api/")) {
-        return NextResponse.json({ error: "Invalid token" }, { status: 401 })
-      }
-      return NextResponse.redirect(new URL("/auth/login", request.url))
+    } catch (err) {
+      console.error("JWT verify failed:", err)
+      return handleUnauthorized(request)
     }
   }
 
   return NextResponse.next()
+}
+
+function handleUnauthorized(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  return NextResponse.redirect(new URL("/auth/login", request.url))
 }
 
 export const config = {

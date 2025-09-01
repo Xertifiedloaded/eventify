@@ -1,11 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const userId = request.headers.get("x-user-id")
     const { verified } = await request.json()
-    const registrationId = params.id
+    const { id: registrationId } = await params // ✅ Fixed: await params
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })

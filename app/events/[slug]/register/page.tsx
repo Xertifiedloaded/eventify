@@ -28,6 +28,13 @@ interface Event {
   }
 }
 
+interface Registration {
+  id: string
+  name: string
+  email: string
+  qrCode: string // This will be the base64 image or URL from backend
+}
+
 export default function RegisterPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
   const router = useRouter()
@@ -35,6 +42,7 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
+  const [registration, setRegistration] = useState<Registration | null>(null)
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -79,8 +87,10 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
       const data = await response.json()
 
       if (response.ok) {
-        // Redirect to success page with registration ID
-        router.push(`/events/${slug}/register/success?id=${data.registration.id}`)
+        // Store the registration data including QR code from backend
+        setRegistration(data.registration)
+        // Redirect to success page with registration ID and QR code
+        router.push(`/events/${slug}/register/success?id=${data.registration.id}&qr=${encodeURIComponent(data.registration.qrCode)}`)
       } else {
         setError(data.error || "Registration failed")
       }
@@ -112,6 +122,38 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
     )
   }
 
+  // Show error state if event not found, registration closed, or full
+  if (!event || !isRegistrationOpen || isFull) {
+    return (
+      <div className="min-h-screen bg-background">
+        <header className="border-b border-border bg-card">
+          <div className="container mx-auto px-4 py-4">
+            <Link
+              href={`/events/${slug}`}
+              className="flex items-center space-x-2 text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Back to Event</span>
+            </Link>
+          </div>
+        </header>
+        <div className="container mx-auto px-4 py-16 text-center max-w-md">
+          <h1 className="text-2xl font-bold text-foreground mb-2">Registration Not Available</h1>
+          <p className="text-muted-foreground mb-4">
+            {!event
+              ? "Event not found."
+              : isFull
+                ? "This event is fully booked."
+                : "Registration is closed for this event."}
+          </p>
+          <Link href={`/events/${slug}`}>
+            <Button>Back to Event</Button>
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -135,9 +177,9 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
         {/* Event Summary */}
         <Card className="mb-8">
           <CardHeader>
-            <CardTitle className="text-balance">{event?.title}</CardTitle>
+            <CardTitle className="text-balance">{event.title}</CardTitle>
             <CardDescription>
-              {event && format(new Date(event.date), "PPP")} at {event?.time} • {event?.location}
+              {format(new Date(event.date), "PPP")} at {event.time} • {event.location}
             </CardDescription>
           </CardHeader>
         </Card>
@@ -251,35 +293,6 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
           </CardContent>
         </Card>
       </div>
-
-      {!event || !isRegistrationOpen || isFull ? (
-        <div className="min-h-screen bg-background">
-          <header className="border-b border-border bg-card">
-            <div className="container mx-auto px-4 py-4">
-              <Link
-                href={`/events/${slug}`}
-                className="flex items-center space-x-2 text-muted-foreground hover:text-foreground"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                <span>Back to Event</span>
-              </Link>
-            </div>
-          </header>
-          <div className="container mx-auto px-4 py-16 text-center max-w-md">
-            <h1 className="text-2xl font-bold text-foreground mb-2">Registration Not Available</h1>
-            <p className="text-muted-foreground mb-4">
-              {!event
-                ? "Event not found."
-                : isFull
-                  ? "This event is fully booked."
-                  : "Registration is closed for this event."}
-            </p>
-            <Link href={`/events/${slug}`}>
-              <Button>Back to Event</Button>
-            </Link>
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }

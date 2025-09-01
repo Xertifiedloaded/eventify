@@ -26,21 +26,57 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Event not found or unauthorized" }, { status: 404 })
     }
 
-    // Parse QR data to extract registration ID
-    // QR data format: /verify/{eventId}/{registrationId}
     let registrationId: string
 
+    // Enhanced QR data parsing with better error handling
+    console.log("Raw QR Data:", qrData) // Debug log
+
     try {
+      // Method 1: Try parsing as JSON
+      const registrationData = JSON.parse(qrData)
+      console.log("Parsed JSON:", registrationData) // Debug log
+      
+      // Look for registration ID in various possible fields
+      registrationId = registrationData.registrationId || 
+                      registrationData.id || 
+                      registrationData.regId ||
+                      registrationData.registration_id
+
+      if (!registrationId) {
+        throw new Error("No registration ID found in JSON structure")
+      }
+    } catch (jsonError) {
+      console.log("JSON parse failed, trying other methods:", jsonError)
+      
+      // Method 2: Check if it's a direct URL format
       if (qrData.includes("/verify/")) {
         const parts = qrData.split("/")
         registrationId = parts[parts.length - 1]
-      } else {
-        // Assume the QR data is the registration ID directly
-        registrationId = qrData
+      } 
+      // Method 3: Check if it's a formatted string like "eventId:registrationId"
+      else if (qrData.includes(":")) {
+        const parts = qrData.split(":")
+        registrationId = parts[parts.length - 1] // Take the last part as registration ID
       }
-    } catch (error) {
-      return NextResponse.json({ error: "Invalid QR code format" }, { status: 400 })
+      // Method 4: Check if it looks like a UUID (contains hyphens)
+      else if (qrData.includes("-") && qrData.length >= 32) {
+        registrationId = qrData.trim()
+      }
+      // Method 5: Try to extract UUID pattern from string
+      else {
+        const uuidMatch = qrData.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)
+        if (uuidMatch) {
+          registrationId = uuidMatch[0]
+        } else {
+          return NextResponse.json({ 
+            error: "Invalid QR code format. Could not extract registration ID.",
+            debug: `Received: ${qrData}` 
+          }, { status: 400 })
+        }
+      }
     }
+
+    console.log("Extracted Registration ID:", registrationId) // Debug log
 
     // Find the registration
     const registration = await prisma.registration.findFirst({
@@ -48,10 +84,36 @@ export async function POST(request: NextRequest) {
         id: registrationId,
         eventId: eventId,
       },
+      include: {
+        event: {
+          select: {
+            title: true,
+            date: true,
+            time: true,
+            location: true,
+          },
+        },
+      },
     })
 
     if (!registration) {
-      return NextResponse.json({ error: "Registration not found for this event" }, { status: 404 })
+      return NextResponse.json({ 
+        error: "Registration not found for this event",
+        debug: `Looking for registration ID: ${registrationId} in event: ${eventId}`
+      }, { status: 404 })
+    }
+
+    // Check if already verified
+    if (registration.verified) {
+      return NextResponse.json({
+        registration: {
+          id: registration.id,
+          name: registration.name,
+          email: registration.email,
+          verified: registration.verified,
+        },
+        message: "Attendee was already checked in",
+      })
     }
 
     // Mark as verified

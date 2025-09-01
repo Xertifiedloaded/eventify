@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Calendar, CheckCircle, Mail, QrCode, ArrowLeft } from "lucide-react"
-import { QRCodeCanvas } from "qrcode.react"  
+import { QRCodeCanvas } from "qrcode.react"
 
 interface Registration {
   id: string
@@ -26,6 +26,7 @@ interface Registration {
 export default function RegistrationSuccessPage({ params }: { params: { slug: string } }) {
   const searchParams = useSearchParams()
   const registrationId = searchParams.get("id")
+  const qrCodeFromBackend = searchParams.get("qr") // ✅ Get QR code from URL
   const [registration, setRegistration] = useState<Registration | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -90,13 +91,73 @@ export default function RegistrationSuccessPage({ params }: { params: { slug: st
     )
   }
 
-  // ✅ Encode full registration details inside QR code
-  const qrValue = JSON.stringify({
-    id: registration.id,
-    name: registration.name,
-    email: registration.email,
-    event: registration.event,
-  })
+  // ✅ Use QR code from backend, with fallbacks
+  const getQRCodeDisplay = () => {
+    // First priority: QR code passed via URL from backend
+    if (qrCodeFromBackend) {
+      // If it's a base64 image or URL
+      if (qrCodeFromBackend.startsWith('data:image') || qrCodeFromBackend.startsWith('http')) {
+        return (
+          <img 
+            src={decodeURIComponent(qrCodeFromBackend)} 
+            alt="QR Code" 
+            className="w-48 h-48 object-contain"
+          />
+        )
+      }
+      // If it's just the QR data string, use QRCodeCanvas
+      return (
+        <QRCodeCanvas
+          value={decodeURIComponent(qrCodeFromBackend)}
+          size={192}
+          bgColor="#ffffff"
+          fgColor="#000000"
+          level="H"
+          includeMargin={true}
+        />
+      )
+    }
+    
+    // Second priority: QR code from registration data
+    if (registration.qrCode) {
+      if (registration.qrCode.startsWith('data:image') || registration.qrCode.startsWith('http')) {
+        return (
+          <img 
+            src={registration.qrCode} 
+            alt="QR Code" 
+            className="w-48 h-48 object-contain"
+          />
+        )
+      }
+      return (
+        <QRCodeCanvas
+          value={registration.qrCode}
+          size={192}
+          bgColor="#ffffff"
+          fgColor="#000000"
+          level="H"
+          includeMargin={true}
+        />
+      )
+    }
+    
+    // Last resort: generate QR code with registration details
+    return (
+      <QRCodeCanvas
+        value={JSON.stringify({
+          id: registration.id,
+          name: registration.name,
+          email: registration.email,
+          event: registration.event,
+        })}
+        size={192}
+        bgColor="#ffffff"
+        fgColor="#000000"
+        level="H"
+        includeMargin={true}
+      />
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -151,7 +212,7 @@ export default function RegistrationSuccessPage({ params }: { params: { slug: st
           </CardContent>
         </Card>
 
-        {/* QR Code */}
+        {/* QR Code - FIXED to use backend QR code */}
         <Card className="mb-6">
           <CardHeader>
             <CardTitle className="flex items-center">
@@ -164,18 +225,17 @@ export default function RegistrationSuccessPage({ params }: { params: { slug: st
           </CardHeader>
           <CardContent className="text-center">
             <div className="inline-block p-4 bg-white rounded-lg shadow-sm">
-              <QRCodeCanvas
-                value={qrValue}   // ✅ full registration details
-                size={192}
-                bgColor="#ffffff"
-                fgColor="#000000"
-                level="H"
-                includeMargin={true}
-              />
+              {getQRCodeDisplay()}
             </div>
             <p className="text-sm text-muted-foreground mt-4">
               Save this QR code to your phone or print it out to bring to the event
             </p>
+            {/* Debug info - remove in production */}
+            {process.env.NODE_ENV === 'development' && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Debug: Using QR from {qrCodeFromBackend ? 'URL params' : registration?.qrCode ? 'registration data' : 'generated locally'}
+              </p>
+            )}
           </CardContent>
         </Card>
 

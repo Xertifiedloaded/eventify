@@ -35,13 +35,13 @@ export async function POST(request: NextRequest) {
     })
 console.log(response);
 
-    response.cookies.set("token", token, {
-      httpOnly: true,
-      secure: false,
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-    })
-
+response.cookies.set("token", token, {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production", // only true on Vercel/https
+  sameSite: "lax",
+  path: "/", // 👈 makes cookie visible on ALL routes
+  maxAge: 60 * 60 * 24 * 7, // 7 days
+})
     return response
   } catch (error) {
     console.error("Login error:", error)
