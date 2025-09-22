@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Calendar, CheckCircle, Mail, QrCode, ArrowLeft } from "lucide-react"
 import { QRCodeCanvas } from "qrcode.react"
+import { use } from "react"
 
 interface Registration {
   id: string
@@ -23,7 +24,8 @@ interface Registration {
   }
 }
 
-export default function RegistrationSuccessPage({ params }: { params: { slug: string } }) {
+export default function RegistrationSuccessPage({ params }: { params: Promise<{ eventId: string }> }) {
+  const { eventId } = use(params)
   const searchParams = useSearchParams()
   const registrationId = searchParams.get("id")
   const qrCodeFromBackend = searchParams.get("qr") // ✅ Get QR code from URL
@@ -96,11 +98,11 @@ export default function RegistrationSuccessPage({ params }: { params: { slug: st
     // First priority: QR code passed via URL from backend
     if (qrCodeFromBackend) {
       // If it's a base64 image or URL
-      if (qrCodeFromBackend.startsWith('data:image') || qrCodeFromBackend.startsWith('http')) {
+      if (qrCodeFromBackend.startsWith("data:image") || qrCodeFromBackend.startsWith("http")) {
         return (
-          <img 
-            src={decodeURIComponent(qrCodeFromBackend)} 
-            alt="QR Code" 
+          <img
+            src={decodeURIComponent(qrCodeFromBackend) || "/placeholder.svg"}
+            alt="QR Code"
             className="w-48 h-48 object-contain"
           />
         )
@@ -117,16 +119,12 @@ export default function RegistrationSuccessPage({ params }: { params: { slug: st
         />
       )
     }
-    
+
     // Second priority: QR code from registration data
     if (registration.qrCode) {
-      if (registration.qrCode.startsWith('data:image') || registration.qrCode.startsWith('http')) {
+      if (registration.qrCode.startsWith("data:image") || registration.qrCode.startsWith("http")) {
         return (
-          <img 
-            src={registration.qrCode} 
-            alt="QR Code" 
-            className="w-48 h-48 object-contain"
-          />
+          <img src={registration.qrCode || "/placeholder.svg"} alt="QR Code" className="w-48 h-48 object-contain" />
         )
       }
       return (
@@ -140,7 +138,7 @@ export default function RegistrationSuccessPage({ params }: { params: { slug: st
         />
       )
     }
-    
+
     // Last resort: generate QR code with registration details
     return (
       <QRCodeCanvas
@@ -165,7 +163,7 @@ export default function RegistrationSuccessPage({ params }: { params: { slug: st
       <header className="border-b border-border bg-card">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link
-            href={`/events/${registration.event.slug}`}
+            href={`/events/${eventId}`}
             className="flex items-center space-x-2 text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -219,21 +217,18 @@ export default function RegistrationSuccessPage({ params }: { params: { slug: st
               <QrCode className="h-5 w-5 mr-2" />
               Your Entry QR Code
             </CardTitle>
-            <CardDescription>
-              Present this QR code at the event for entry verification
-            </CardDescription>
+            <CardDescription>Present this QR code at the event for entry verification</CardDescription>
           </CardHeader>
           <CardContent className="text-center">
-            <div className="inline-block p-4 bg-white rounded-lg shadow-sm">
-              {getQRCodeDisplay()}
-            </div>
+            <div className="inline-block p-4 bg-white rounded-lg shadow-sm">{getQRCodeDisplay()}</div>
             <p className="text-sm text-muted-foreground mt-4">
               Save this QR code to your phone or print it out to bring to the event
             </p>
             {/* Debug info - remove in production */}
-            {process.env.NODE_ENV === 'development' && (
+            {process.env.NODE_ENV === "development" && (
               <p className="text-xs text-muted-foreground mt-2">
-                Debug: Using QR from {qrCodeFromBackend ? 'URL params' : registration?.qrCode ? 'registration data' : 'generated locally'}
+                Debug: Using QR from{" "}
+                {qrCodeFromBackend ? "URL params" : registration?.qrCode ? "registration data" : "generated locally"}
               </p>
             )}
           </CardContent>
@@ -279,7 +274,7 @@ export default function RegistrationSuccessPage({ params }: { params: { slug: st
 
         {/* Actions */}
         <div className="flex flex-col sm:flex-row gap-4">
-          <Link href={`/events/${registration.event.slug}`} className="flex-1">
+          <Link href={`/events/${eventId}`} className="flex-1">
             <Button variant="outline" className="w-full bg-transparent">
               View Event Details
             </Button>

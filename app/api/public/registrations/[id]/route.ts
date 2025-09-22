@@ -1,33 +1,48 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const userId = request.headers.get("x-user-id")
+    const { verified } = await request.json()
+    const { id: registrationId } = await params // ✅ Fixed: await params
 
-    const { id } = await params
-    
-    const registration = await prisma.registration.findUnique({
-      where: { id },
-      include: {
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // Find the registration and verify the user owns the event
+    const registration = await prisma.registration.findFirst({
+      where: {
+        id: registrationId,
         event: {
-          select: {
-            title: true,
-            date: true,
-            time: true,
-            location: true,
-            slug: true,
-          },
+          organizerId: userId,
         },
       },
     })
 
     if (!registration) {
-      return NextResponse.json({ error: "Registration not found" }, { status: 404 })
+      return NextResponse.json({ error: "Registration not found or unauthorized" }, { status: 404 })
     }
 
-    return NextResponse.json({ registration })
+    // Update verification status
+    const updatedRegistration = await prisma.registration.update({
+      where: {
+        id: registrationId,
+      },
+      data: {
+        verified: verified,
+      },
+    })
+
+    return NextResponse.json({
+      registration: {
+        id: updatedRegistration.id,
+        verified: updatedRegistration.verified,
+      },
+    })
   } catch (error) {
-    console.error("Failed to fetch registration:", error)
+    console.error("Failed to update verification status:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

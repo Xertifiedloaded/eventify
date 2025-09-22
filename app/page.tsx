@@ -49,7 +49,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Features Section */}
       <section className="py-16 px-4 bg-muted/30">
         <div className="container mx-auto max-w-6xl">
           <h3 className="text-3xl font-bold text-center text-foreground mb-12">Everything You Need to Manage Events</h3>

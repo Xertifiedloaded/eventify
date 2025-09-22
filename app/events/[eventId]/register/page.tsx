@@ -32,11 +32,11 @@ interface Registration {
   id: string
   name: string
   email: string
-  qrCode: string // This will be the base64 image or URL from backend
+  qrCode: string
 }
 
-export default function RegisterPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = use(params)
+export default function RegisterPage({ params }: { params: Promise<{ eventId: string }> }) {
+  const { eventId } = use(params)
   const router = useRouter()
   const [event, setEvent] = useState<Event | null>(null)
   const [loading, setLoading] = useState(true)
@@ -52,11 +52,11 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
 
   useEffect(() => {
     fetchEvent()
-  }, [slug])
+  }, [eventId])
 
   const fetchEvent = async () => {
     try {
-      const response = await fetch(`/api/public/events/${slug}`)
+      const response = await fetch(`/api/public/events/${eventId}`)
       if (response.ok) {
         const data = await response.json()
         setEvent(data.event)
@@ -76,7 +76,7 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
     setError("")
 
     try {
-      const response = await fetch(`/api/public/events/${slug}/register`, {
+      const response = await fetch(`/api/public/events/${eventId}/register`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -87,10 +87,10 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
       const data = await response.json()
 
       if (response.ok) {
-        // Store the registration data including QR code from backend
         setRegistration(data.registration)
-        // Redirect to success page with registration ID and QR code
-        router.push(`/events/${slug}/register/success?id=${data.registration.id}&qr=${encodeURIComponent(data.registration.qrCode)}`)
+        router.push(
+          `/events/${eventId}/register/success?id=${data.registration.id}&qr=${encodeURIComponent(data.registration.qrCode)}`,
+        )
       } else {
         setError(data.error || "Registration failed")
       }
@@ -122,14 +122,13 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
     )
   }
 
-  // Show error state if event not found, registration closed, or full
   if (!event || !isRegistrationOpen || isFull) {
     return (
       <div className="min-h-screen bg-background">
         <header className="border-b border-border bg-card">
           <div className="container mx-auto px-4 py-4">
             <Link
-              href={`/events/${slug}`}
+              href={`/events/${eventId}`}
               className="flex items-center space-x-2 text-muted-foreground hover:text-foreground"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -146,7 +145,7 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
                 ? "This event is fully booked."
                 : "Registration is closed for this event."}
           </p>
-          <Link href={`/events/${slug}`}>
+          <Link href={`/events/${eventId}`}>
             <Button>Back to Event</Button>
           </Link>
         </div>
@@ -156,11 +155,10 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="border-b border-border bg-card">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link
-            href={`/events/${slug}`}
+            href={`/events/${eventId}`}
             className="flex items-center space-x-2 text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -174,7 +172,6 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
       </header>
 
       <div className="container mx-auto px-4 py-8 max-w-2xl">
-        {/* Event Summary */}
         <Card className="mb-8">
           <CardHeader>
             <CardTitle className="text-balance">{event.title}</CardTitle>
@@ -184,7 +181,6 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
           </CardHeader>
         </Card>
 
-        {/* Registration Form */}
         <Card>
           <CardHeader>
             <CardTitle>Register for This Event</CardTitle>
@@ -283,7 +279,7 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
                 <Button type="submit" disabled={submitting} className="flex-1">
                   {submitting ? "Registering..." : "Complete Registration"}
                 </Button>
-                <Link href={`/events/${slug}`}>
+                <Link href={`/events/${eventId}`}>
                   <Button type="button" variant="outline" className="w-full sm:w-auto bg-transparent">
                     Cancel
                   </Button>
