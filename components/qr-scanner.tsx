@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Camera, CameraOff, Scan, AlertCircle, CheckCircle } from "lucide-react"
-import QrScanner from "qr-scanner" // ✅ static import works fine in client components
+import QrScanner from "qr-scanner"
 
 interface QRScannerProps {
   onScan: (data: string) => void
@@ -16,63 +16,75 @@ interface QRScannerProps {
 
 const QRScanner = ({ onScan, onError, isScanning = false, className }: QRScannerProps) => {
   const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isActive, setIsActive] = useState(false)
   const [error, setError] = useState<string>("")
   const [hasPermission, setHasPermission] = useState<boolean | null>(null)
-  const [stream, setStream] = useState<MediaStream | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
   const scannerRef = useRef<QrScanner | null>(null)
 
   const startScanning = async () => {
     try {
       setError("")
+      setIsLoading(true)
 
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment",
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+      // Check if QR Scanner has camera support
+      const hasCamera = await QrScanner.hasCamera()
+      if (!hasCamera) {
+        throw new Error("No camera available on this device")
+      }
+
+      // Wait a bit for the video element to be ready
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      if (!videoRef.current) {
+        throw new Error("Video element not found")
+      }
+
+      // Create QR Scanner instance first
+      const scanner = new QrScanner(
+        videoRef.current,
+        (result: any) => {
+          console.log("QR Code detected:", result.data)
+          onScan(result.data)
         },
-      })
+        {
+          returnDetailedScanResult: true,
+          highlightScanRegion: true,
+          highlightCodeOutline: true,
+          preferredCamera: 'environment', // Use back camera if available
+          maxScansPerSecond: 5,
+        }
+      )
 
-      setStream(mediaStream)
+      scannerRef.current = scanner
+      
+      // Start the scanner
+      await scanner.start()
+      
       setHasPermission(true)
       setIsActive(true)
+      setIsLoading(false)
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream
-        await videoRef.current.play()
-
-        const scanner = new QrScanner(
-          videoRef.current,
-          (result: any) => {
-            console.log("QR Code detected:", result.data)
-            onScan(result.data)
-          },
-          {
-            returnDetailedScanResult: true,
-            highlightScanRegion: false, // we use our own overlay
-            highlightCodeOutline: true,
-          },
-        )
-
-        scannerRef.current = scanner
-        await scanner.start()
-      }
     } catch (err: any) {
       console.error("Error starting camera:", err)
       setHasPermission(false)
       setIsActive(false)
+      setIsLoading(false)
 
       let errorMessage = "Failed to access camera. "
-      if (err.name === "NotAllowedError") {
+      
+      if (err.name === "NotAllowedError" || err.message?.includes("permission")) {
         errorMessage += "Please allow camera access and try again."
-      } else if (err.name === "NotFoundError") {
+      } else if (err.name === "NotFoundError" || err.message?.includes("No camera")) {
         errorMessage += "No camera found on this device."
       } else if (err.name === "NotSupportedError") {
-        errorMessage += "Camera is not supported on this device."
+        errorMessage += "Camera is not supported on this device or browser."
+      } else if (err.name === "NotReadableError") {
+        errorMessage += "Camera is being used by another application."
+      } else if (err.message?.includes("secure")) {
+        errorMessage += "Camera access requires HTTPS connection."
       } else {
-        errorMessage += "Please check your camera permissions."
+        errorMessage += `Error: ${err.message || "Unknown camera error"}`
       }
 
       setError(errorMessage)
@@ -81,22 +93,37 @@ const QRScanner = ({ onScan, onError, isScanning = false, className }: QRScanner
   }
 
   const stopScanning = () => {
-    if (scannerRef.current) {
-      scannerRef.current.stop()
-      scannerRef.current.destroy()
-      scannerRef.current = null
+    try {
+      if (scannerRef.current) {
+        scannerRef.current.stop()
+        scannerRef.current.destroy()
+        scannerRef.current = null
+      }
+      setIsActive(false)
+      setError("")
+      setIsLoading(false)
+    } catch (err) {
+      console.error("Error stopping scanner:", err)
     }
-
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop())
-      setStream(null)
-    }
-
-    setIsActive(false)
-    setError("")
   }
 
+  // Check camera permissions on mount
   useEffect(() => {
+    const checkCameraSupport = async () => {
+      try {
+        const hasCamera = await QrScanner.hasCamera()
+        if (!hasCamera) {
+          setError("No camera available on this device")
+          setHasPermission(false)
+        }
+      } catch (err) {
+        console.error("Error checking camera support:", err)
+      }
+    }
+
+    checkCameraSupport()
+
+    // Cleanup on unmount
     return () => stopScanning()
   }, [])
 
@@ -117,7 +144,7 @@ const QRScanner = ({ onScan, onError, isScanning = false, className }: QRScanner
           </Alert>
         )}
 
-        {hasPermission === false && (
+        {hasPermission === false && !error && (
           <Alert>
             <Camera className="h-4 w-4" />
             <AlertDescription>
@@ -127,41 +154,51 @@ const QRScanner = ({ onScan, onError, isScanning = false, className }: QRScanner
         )}
 
         <div className="relative">
-          {isActive ? (
-            <div className="relative">
-              <video
-                ref={videoRef}
-                className="w-full h-64 bg-black rounded-lg object-cover"
-                playsInline
-                muted
-              />
-              <canvas ref={canvasRef} className="hidden" />
+          <video
+            ref={videoRef}
+            className="w-full h-64 bg-black rounded-lg object-cover"
+            playsInline
+            muted
+            autoPlay
+            style={{ 
+              transform: 'scaleX(-1)', // Mirror the video for better UX
+            }}
+          />
 
-              {/* ✅ Square scanning overlay */}
+          {isActive ? (
+            <>
+              {/* Square scanning overlay */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-48 h-48 border-4 border-primary relative">
-                  {/* corner markers */}
-                  <div className="absolute top-0 left-0 w-6 h-6 border-l-4 border-t-4 border-primary"></div>
-                  <div className="absolute top-0 right-0 w-6 h-6 border-r-4 border-t-4 border-primary"></div>
-                  <div className="absolute bottom-0 left-0 w-6 h-6 border-l-4 border-b-4 border-primary"></div>
-                  <div className="absolute bottom-0 right-0 w-6 h-6 border-r-4 border-b-4 border-primary"></div>
+                <div className="w-48 h-48 border-2 border-primary relative opacity-80">
+                  {/* Corner markers */}
+                  <div className="absolute -top-1 -left-1 w-6 h-6 border-l-4 border-t-4 border-primary"></div>
+                  <div className="absolute -top-1 -right-1 w-6 h-6 border-r-4 border-t-4 border-primary"></div>
+                  <div className="absolute -bottom-1 -left-1 w-6 h-6 border-l-4 border-b-4 border-primary"></div>
+                  <div className="absolute -bottom-1 -right-1 w-6 h-6 border-r-4 border-b-4 border-primary"></div>
+                  
+                  {/* Scanning line animation */}
+                  <div className="absolute inset-x-0 top-0 h-0.5 bg-primary animate-pulse"></div>
                 </div>
               </div>
 
-              {isScanning && (
+              {(isScanning || isLoading) && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-lg">
                   <div className="bg-background/90 px-4 py-2 rounded-lg flex items-center gap-2">
                     <CheckCircle className="h-4 w-4 text-green-600 animate-pulse" />
-                    <span className="text-sm font-medium">Processing...</span>
+                    <span className="text-sm font-medium">
+                      {isLoading ? "Starting camera..." : "Processing..."}
+                    </span>
                   </div>
                 </div>
               )}
-            </div>
+            </>
           ) : (
-            <div className="w-full h-64 bg-muted rounded-lg flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center justify-center bg-muted rounded-lg">
               <div className="text-center">
                 <Camera className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
-                <p className="text-muted-foreground">Camera not active</p>
+                <p className="text-muted-foreground">
+                  {isLoading ? "Starting camera..." : "Camera not active"}
+                </p>
               </div>
             </div>
           )}
@@ -169,12 +206,16 @@ const QRScanner = ({ onScan, onError, isScanning = false, className }: QRScanner
 
         <div className="flex gap-2">
           {!isActive ? (
-            <Button onClick={startScanning} className="flex-1">
+            <Button 
+              onClick={startScanning} 
+              className="flex-1"
+              disabled={isLoading || hasPermission === false}
+            >
               <Camera className="h-4 w-4 mr-2" />
-              Start Scanning
+              {isLoading ? "Starting..." : "Start Scanning"}
             </Button>
           ) : (
-            <Button onClick={stopScanning} variant="outline" className="flex-1 bg-transparent">
+            <Button onClick={stopScanning} variant="outline" className="flex-1">
               <CameraOff className="h-4 w-4 mr-2" />
               Stop Scanning
             </Button>
@@ -182,10 +223,13 @@ const QRScanner = ({ onScan, onError, isScanning = false, className }: QRScanner
         </div>
 
         {/* Instructions */}
-        <div className="text-xs text-muted-foreground text-center">
+        <div className="text-xs text-muted-foreground text-center space-y-1">
           <p>• Point your camera at a QR code</p>
           <p>• Make sure the QR code is well-lit and in focus</p>
           <p>• The scanner will automatically detect and process the code</p>
+          {window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && (
+            <p className="text-orange-600">• Camera requires HTTPS connection</p>
+          )}
         </div>
       </CardContent>
     </Card>
