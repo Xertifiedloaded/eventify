@@ -148,12 +148,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center space-x-4">
-            {user && (
-              <span className="hidden sm:block text-sm text-muted-foreground">
-                Welcome, {user.name}
-              </span>
-
-            )}
+            {user && <span className="hidden sm:block text-sm text-muted-foreground">Welcome, {user.name}</span>}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm">

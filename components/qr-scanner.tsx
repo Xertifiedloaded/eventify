@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Camera, CameraOff, Scan, AlertCircle, CheckCircle } from "lucide-react"
-import QrScanner from "qr-scanner" // ✅ static import works fine in Next.js client components
+import QrScanner from "qr-scanner" // ✅ static import works fine in client components
 
 interface QRScannerProps {
   onScan: (data: string) => void
@@ -21,14 +21,12 @@ const QRScanner = ({ onScan, onError, isScanning = false, className }: QRScanner
   const [error, setError] = useState<string>("")
   const [hasPermission, setHasPermission] = useState<boolean | null>(null)
   const [stream, setStream] = useState<MediaStream | null>(null)
-  const scanIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const scannerRef = useRef<QrScanner | null>(null)
 
   const startScanning = async () => {
     try {
       setError("")
 
-      // Request camera permission
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: "environment",
@@ -45,7 +43,6 @@ const QRScanner = ({ onScan, onError, isScanning = false, className }: QRScanner
         videoRef.current.srcObject = mediaStream
         await videoRef.current.play()
 
-        // ✅ Create scanner instance
         const scanner = new QrScanner(
           videoRef.current,
           (result: any) => {
@@ -54,9 +51,8 @@ const QRScanner = ({ onScan, onError, isScanning = false, className }: QRScanner
           },
           {
             returnDetailedScanResult: true,
-            highlightScanRegion: true,
+            highlightScanRegion: false, // we use our own overlay
             highlightCodeOutline: true,
-            preferredCamera: "environment",
           },
         )
 
@@ -96,20 +92,12 @@ const QRScanner = ({ onScan, onError, isScanning = false, className }: QRScanner
       setStream(null)
     }
 
-    if (scanIntervalRef.current) {
-      clearInterval(scanIntervalRef.current)
-      scanIntervalRef.current = null
-    }
-
     setIsActive(false)
     setError("")
   }
 
-  // Cleanup on unmount
   useEffect(() => {
-    return () => {
-      stopScanning()
-    }
+    return () => stopScanning()
   }, [])
 
   return (
@@ -141,15 +129,23 @@ const QRScanner = ({ onScan, onError, isScanning = false, className }: QRScanner
         <div className="relative">
           {isActive ? (
             <div className="relative">
-              <video ref={videoRef} className="w-full h-64 bg-black rounded-lg object-cover" playsInline muted />
+              <video
+                ref={videoRef}
+                className="w-full h-64 bg-black rounded-lg object-cover"
+                playsInline
+                muted
+              />
               <canvas ref={canvasRef} className="hidden" />
 
-              {/* Overlay */}
-              <div className="absolute inset-0 border-2 border-primary rounded-lg pointer-events-none">
-                <div className="absolute top-4 left-4 w-6 h-6 border-l-4 border-t-4 border-primary"></div>
-                <div className="absolute top-4 right-4 w-6 h-6 border-r-4 border-t-4 border-primary"></div>
-                <div className="absolute bottom-4 left-4 w-6 h-6 border-l-4 border-b-4 border-primary"></div>
-                <div className="absolute bottom-4 right-4 w-6 h-6 border-r-4 border-b-4 border-primary"></div>
+              {/* ✅ Square scanning overlay */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="w-48 h-48 border-4 border-primary relative">
+                  {/* corner markers */}
+                  <div className="absolute top-0 left-0 w-6 h-6 border-l-4 border-t-4 border-primary"></div>
+                  <div className="absolute top-0 right-0 w-6 h-6 border-r-4 border-t-4 border-primary"></div>
+                  <div className="absolute bottom-0 left-0 w-6 h-6 border-l-4 border-b-4 border-primary"></div>
+                  <div className="absolute bottom-0 right-0 w-6 h-6 border-r-4 border-b-4 border-primary"></div>
+                </div>
               </div>
 
               {isScanning && (
@@ -185,6 +181,7 @@ const QRScanner = ({ onScan, onError, isScanning = false, className }: QRScanner
           )}
         </div>
 
+        {/* Instructions */}
         <div className="text-xs text-muted-foreground text-center">
           <p>• Point your camera at a QR code</p>
           <p>• Make sure the QR code is well-lit and in focus</p>
